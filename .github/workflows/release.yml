@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}"
+
+          mkdir -p build
+
+          # Windows AMD64
+          echo "Building Windows AMD64..."
+          GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o build/broadcast-relay-windows-amd64.exe .
+
+          # macOS Intel
+          echo "Building macOS AMD64..."
+          GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o build/broadcast-relay-darwin-amd64 .
+
+          # macOS Apple Silicon
+          echo "Building macOS ARM64..."
+          GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o build/broadcast-relay-darwin-arm64 .
+
+      - name: Create checksums
+        run: |
+          cd build
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            build/broadcast-relay-windows-amd64.exe
+            build/broadcast-relay-darwin-amd64
+            build/broadcast-relay-darwin-arm64
+            build/checksums.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
